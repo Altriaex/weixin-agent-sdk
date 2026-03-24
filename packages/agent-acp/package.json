@@ -1,6 +1,6 @@
 {
   "name": "weixin-acp",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "WeChat + ACP (Agent Client Protocol) adapter — connect any ACP agent to WeChat",
   "license": "MIT",
   "type": "module",
