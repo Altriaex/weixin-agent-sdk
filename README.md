@@ -62,12 +62,12 @@ corepack pnpm -C packages/weixin-acp run login
 corepack pnpm -C packages/weixin-acp run codex
 ```
 
-如果你希望把 `weixin-agent-sdk` 放在一个固定目录里，但实际在另一个项目目录中作为 Codex 的工作目录启动，切到你的目标项目目录，再直接执行构建后的 CLI：
+如果你希望把 `weixin-agent-sdk` 放在一个固定目录里，但实际在另一个项目目录中作为 Codex 的工作目录启动，切到你的目标项目目录后，可以这样执行。`login` 可以直接调用 CLI；`codex` 需要显式指定本地的 `codex-acp` 可执行文件：
 
 ```bash
 cd /path/to/your-project
 node /path/to/weixin-agent-sdk/packages/weixin-acp/dist/main.mjs login
-node /path/to/weixin-agent-sdk/packages/weixin-acp/dist/main.mjs codex
+node /path/to/weixin-agent-sdk/packages/weixin-acp/dist/main.mjs start -- /path/to/weixin-agent-sdk/packages/weixin-acp/node_modules/.bin/codex-acp
 ```
 
 ### 其它 ACP Agent
