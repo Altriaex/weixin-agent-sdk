@@ -2,10 +2,14 @@ import type { Agent } from "../agent/interface.js";
 import { getUpdates } from "../api/api.js";
 import { WeixinConfigManager } from "../api/config-cache.js";
 import { SESSION_EXPIRED_ERRCODE, pauseSession, getRemainingPauseMs } from "../api/session-guard.js";
+import type { MessageItem } from "../api/types.js";
+import { MessageItemType } from "../api/types.js";
 import { processOneMessage } from "../messaging/process-message.js";
+import { getSlashCommandPriority } from "../messaging/slash-commands.js";
 import { getSyncBufFilePath, loadGetUpdatesBuf, saveGetUpdatesBuf } from "../storage/sync-buf.js";
 import { logger } from "../util/logger.js";
 import { redactBody } from "../util/redact.js";
+import { createConversationDispatcher } from "./conversation-dispatcher.js";
 
 const DEFAULT_LONG_POLL_TIMEOUT_MS = 35_000;
 const MAX_CONSECUTIVE_FAILURES = 3;
@@ -22,6 +26,42 @@ export type MonitorWeixinOpts = {
   longPollTimeoutMs?: number;
   log?: (msg: string) => void;
 };
+
+function extractTextBody(itemList?: MessageItem[]): string {
+  if (!itemList?.length) {
+    return "";
+  }
+  for (const item of itemList) {
+    if (item.type === MessageItemType.TEXT && item.text_item?.text != null) {
+      return String(item.text_item.text);
+    }
+  }
+  return "";
+}
+
+function getInboundConversationResetVersion(
+  dispatcher: ReturnType<typeof createConversationDispatcher>,
+  conversationId: string,
+  textBody: string,
+): number {
+  if (shouldReserveConversationReset(textBody)) {
+    // Reserve the new session boundary before enqueueing later messages from the same poll.
+    return dispatcher.markConversationReset(conversationId);
+  }
+
+  return dispatcher.getConversationResetVersion(conversationId);
+}
+
+function shouldReserveConversationReset(textBody: string): boolean {
+  const trimmed = textBody.trim().toLowerCase();
+  if (!trimmed.startsWith("/")) {
+    return false;
+  }
+
+  const spaceIdx = trimmed.indexOf(" ");
+  const name = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+  return name === "/new" || name === "/clear";
+}
 
 /**
  * Long-poll loop: getUpdates → process message → call agent → send reply.
@@ -58,6 +98,7 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
   }
 
   const configManager = new WeixinConfigManager({ baseUrl, token }, log);
+  const dispatcher = createConversationDispatcher();
 
   let nextTimeoutMs = longPollTimeoutMs ?? DEFAULT_LONG_POLL_TIMEOUT_MS;
   let consecutiveFailures = 0;
@@ -118,23 +159,48 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
 
       const list = resp.msgs ?? [];
       for (const full of list) {
-        aLog.info(
-          `inbound: from=${full.from_user_id} types=${full.item_list?.map((i) => i.type).join(",") ?? "none"}`,
+        const conversationId = full.from_user_id ?? "";
+        const textBody = extractTextBody(full.item_list);
+        const priority = getSlashCommandPriority(textBody);
+        const conversationResetVersion = getInboundConversationResetVersion(
+          dispatcher,
+          conversationId,
+          textBody,
         );
 
-        const fromUserId = full.from_user_id ?? "";
-        const cachedConfig = await configManager.getForUser(fromUserId, full.context_token);
+        void dispatcher
+          .dispatch({
+            conversationId,
+            priority,
+            run: async () => {
+              aLog.info(
+                `inbound: from=${full.from_user_id} priority=${priority} types=${full.item_list?.map((i) => i.type).join(",") ?? "none"}`,
+              );
 
-        await processOneMessage(full, {
-          accountId,
-          agent,
-          baseUrl,
-          cdnBaseUrl,
-          token,
-          typingTicket: cachedConfig.typingTicket,
-          log,
-          errLog,
-        });
+              const cachedConfig = await configManager.getForUser(
+                conversationId,
+                full.context_token,
+              );
+
+              await processOneMessage(full, {
+                accountId,
+                agent,
+                baseUrl,
+                cdnBaseUrl,
+                token,
+                typingTicket: cachedConfig.typingTicket,
+                log,
+                errLog,
+                conversationController: dispatcher,
+                conversationResetVersion,
+              });
+            },
+          })
+          .catch((error) => {
+            errLog(
+              `[weixin] inbound dispatch failed: conversation=${conversationId} priority=${priority} error=${String(error)}`,
+            );
+          });
       }
     } catch (err) {
       if (abortSignal?.aborted) {

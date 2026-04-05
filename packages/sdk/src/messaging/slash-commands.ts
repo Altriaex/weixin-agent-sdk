@@ -1,19 +1,35 @@
 /**
- * Weixin 斜杠指令处理模块
+ * Slash command handling for Weixin conversations.
  *
- * 支持的指令：
- * - /echo <message>         直接回复消息（不经过 AI），并附带通道耗时统计
- * - /toggle-debug           开关 debug 模式，启用后每条 AI 回复追加全链路耗时
- * - /clear                  清除当前会话，重新开始对话
+ * Supported commands:
+ * - /echo <message>
+ * - /toggle-debug
+ * - /clear
+ * - /new
+ * - /status
+ * - /model [model] [reasoning]
+ * - /approve
+ * - /reject
  */
 import type { WeixinApiOptions } from "../api/api.js";
 import { logger } from "../util/logger.js";
 
-import { toggleDebugMode, isDebugMode } from "./debug-mode.js";
+import { toggleDebugMode } from "./debug-mode.js";
 import { sendMessageWeixin } from "./send.js";
 
+const slashCommandFallbacks = {
+  "/clear": "✅ 会话已清除，重新开始对话",
+  "/new": "✅ 已切换到新会话",
+  "/status": "当前 Agent 不支持 /status",
+  "/model": "当前 Agent 不支持 /model",
+  "/approve": "当前没有待审批操作",
+  "/reject": "当前没有待审批操作",
+} as const;
+
+const CONTROL_SLASH_COMMANDS = new Set(["/approve", "/clear", "/new", "/reject"]);
+
 export interface SlashCommandResult {
-  /** 是否是斜杠指令（true 表示已处理，不需要继续走 AI） */
+  /** Whether the message was handled as a slash command. */
   handled: boolean;
 }
 
@@ -25,12 +41,59 @@ export interface SlashCommandContext {
   accountId: string;
   log: (msg: string) => void;
   errLog: (msg: string) => void;
-  /** Called when /clear is invoked to reset the agent session. */
-  onClear?: () => void;
+  shouldSendReply?: () => boolean | Promise<boolean>;
+  /** Called when /clear is invoked. */
+  onClear?: () => string | void | Promise<string | void>;
+  /** Called when /new is invoked. */
+  onNew?: () => string | void | Promise<string | void>;
+  /** Called when /status is invoked. */
+  onStatus?: () => string | void | Promise<string | void>;
+  /** Called when /model is invoked. */
+  onModel?: (args: string) => string | void | Promise<string | void>;
+  /** Called when /approve is invoked. */
+  onApprove?: () => string | void | Promise<string | void>;
+  /** Called when /reject is invoked. */
+  onReject?: () => string | void | Promise<string | void>;
 }
 
-/** 发送回复消息 */
+export type ParsedSlashCommand = {
+  name: string;
+  args: string;
+};
+
+function getSlashCommandFallbackText(command: string): string | undefined {
+  return slashCommandFallbacks[command as keyof typeof slashCommandFallbacks];
+}
+
+export function parseSlashCommand(content: string): ParsedSlashCommand | undefined {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("/")) {
+    return undefined;
+  }
+
+  const spaceIdx = trimmed.indexOf(" ");
+  const name = spaceIdx === -1 ? trimmed.toLowerCase() : trimmed.slice(0, spaceIdx).toLowerCase();
+  const args = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1);
+
+  return { name, args };
+}
+
+export function isControlSlashCommand(content: string): boolean {
+  const parsed = parseSlashCommand(content);
+  return parsed ? CONTROL_SLASH_COMMANDS.has(parsed.name) : false;
+}
+
+export function getSlashCommandPriority(content: string): "control" | "normal" {
+  return isControlSlashCommand(content) ? "control" : "normal";
+}
+
+/** Send a reply message. */
 async function sendReply(ctx: SlashCommandContext, text: string): Promise<void> {
+  const shouldSendReply = ctx.shouldSendReply ? await ctx.shouldSendReply() : true;
+  if (!shouldSendReply) {
+    logger.info(`[weixin] drop slash reply: to=${ctx.to}`);
+    return;
+  }
   const opts: WeixinApiOptions & { contextToken?: string } = {
     baseUrl: ctx.baseUrl,
     token: ctx.token,
@@ -39,7 +102,7 @@ async function sendReply(ctx: SlashCommandContext, text: string): Promise<void> 
   await sendMessageWeixin({ to: ctx.to, text, opts });
 }
 
-/** 处理 /echo 指令 */
+/** Handle the /echo command. */
 async function handleEcho(
   ctx: SlashCommandContext,
   args: string,
@@ -61,10 +124,19 @@ async function handleEcho(
   await sendReply(ctx, timing);
 }
 
+async function handleControlCommand(
+  ctx: SlashCommandContext,
+  handler: (() => string | void | Promise<string | void>) | undefined,
+  fallbackText: string,
+): Promise<void> {
+  const reply = await handler?.();
+  await sendReply(ctx, typeof reply === "string" && reply.trim() ? reply : fallbackText);
+}
+
 /**
- * 尝试处理斜杠指令
+ * Try to handle a slash command.
  *
- * @returns handled=true 表示该消息已作为指令处理，不需要继续走 AI 管道
+ * @returns handled=true means the message was consumed as a command.
  */
 export async function handleSlashCommand(
   content: string,
@@ -72,14 +144,11 @@ export async function handleSlashCommand(
   receivedAt: number,
   eventTimestamp?: number,
 ): Promise<SlashCommandResult> {
-  const trimmed = content.trim();
-  if (!trimmed.startsWith("/")) {
+  const parsed = parseSlashCommand(content);
+  if (!parsed) {
     return { handled: false };
   }
-
-  const spaceIdx = trimmed.indexOf(" ");
-  const command = spaceIdx === -1 ? trimmed.toLowerCase() : trimmed.slice(0, spaceIdx).toLowerCase();
-  const args = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1);
+  const { name: command, args } = parsed;
 
   logger.info(`[weixin] Slash command: ${command}, args: ${args.slice(0, 50)}`);
 
@@ -99,8 +168,51 @@ export async function handleSlashCommand(
         return { handled: true };
       }
       case "/clear": {
-        ctx.onClear?.();
-        await sendReply(ctx, "✅ 会话已清除，重新开始对话");
+        await handleControlCommand(
+          ctx,
+          ctx.onClear,
+          getSlashCommandFallbackText(command) ?? "✅ 会话已清除，重新开始对话",
+        );
+        return { handled: true };
+      }
+      case "/new": {
+        await handleControlCommand(
+          ctx,
+          ctx.onNew,
+          getSlashCommandFallbackText(command) ?? "✅ 已切换到新会话",
+        );
+        return { handled: true };
+      }
+      case "/status": {
+        await handleControlCommand(
+          ctx,
+          ctx.onStatus,
+          getSlashCommandFallbackText(command) ?? "当前 Agent 不支持 /status",
+        );
+        return { handled: true };
+      }
+      case "/model": {
+        await handleControlCommand(
+          ctx,
+          ctx.onModel ? () => ctx.onModel?.(args) : undefined,
+          getSlashCommandFallbackText(command) ?? "当前 Agent 不支持 /model",
+        );
+        return { handled: true };
+      }
+      case "/approve": {
+        await handleControlCommand(
+          ctx,
+          ctx.onApprove,
+          getSlashCommandFallbackText(command) ?? "当前没有待审批操作",
+        );
+        return { handled: true };
+      }
+      case "/reject": {
+        await handleControlCommand(
+          ctx,
+          ctx.onReject,
+          getSlashCommandFallbackText(command) ?? "当前没有待审批操作",
+        );
         return { handled: true };
       }
       default:
@@ -111,7 +223,7 @@ export async function handleSlashCommand(
     try {
       await sendReply(ctx, `❌ 指令执行失败: ${String(err).slice(0, 200)}`);
     } catch {
-      // 发送错误消息也失败了，只能记日志
+      // Sending the failure notice also failed.
     }
     return { handled: true };
   }

@@ -10,7 +10,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import OpenAI from "openai";
-import type { Agent, ChatRequest, ChatResponse } from "weixin-agent-sdk";
+import type { Agent, ChatContext, ChatRequest, ChatResponse } from "weixin-agent-sdk";
 
 export type OpenAIAgentOptions = {
   apiKey: string;
@@ -40,7 +40,7 @@ export class OpenAIAgent implements Agent {
     this.maxHistory = opts.maxHistory ?? 50;
   }
 
-  async chat(request: ChatRequest): Promise<ChatResponse> {
+  async chat(request: ChatRequest, _context?: ChatContext): Promise<ChatResponse> {
     const history = this.conversations.get(request.conversationId) ?? [];
 
     // Build user message content

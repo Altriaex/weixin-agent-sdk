@@ -22,6 +22,7 @@ export type WeixinApiOptions = {
   baseUrl: string;
   token?: string;
   timeoutMs?: number;
+  abortSignal?: AbortSignal;
   /** Long-poll timeout for getUpdates (server may hold the request up to this). */
   longPollTimeoutMs?: number;
 };
@@ -256,6 +257,7 @@ export async function sendMessage(
     token: params.token,
     timeoutMs: params.timeoutMs ?? DEFAULT_API_TIMEOUT_MS,
     label: "sendMessage",
+    abortSignal: params.abortSignal,
   });
 }
 

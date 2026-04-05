@@ -1,6 +1,6 @@
 # weixin-agent-sdk
 
-> 本项目非微信官方项目，代码由 [@tencent-weixin/openclaw-weixin](https://npmx.dev/package/@tencent-weixin/openclaw-weixin) 改造而来，仅供学习交流使用。
+> 本项目由 [@wong2/weixin-agent-sdk](https://github.com/wong2/weixin-agent-sdk) 改造而来，仅供学习交流使用。
 
 微信 AI Agent 桥接框架 —— 通过简单的 Agent 接口，将任意 AI 后端接入微信。
 
@@ -29,6 +29,14 @@ npx weixin-acp claude-code
 ```bash
 npx weixin-acp codex
 ```
+
+目前通过 `weixin-acp` 接入 Codex，已经支持这些能力：
+
+- 通过微信与本地 Codex 会话收发消息，包含文本，以及图片、语音、文件等常见输入。
+- 使用 `/new` 或 `/clear` 切换到新的 Codex session。
+- 使用 `/status` 查看当前会话摘要，并显示 ACP 会话暴露的用量信息。
+- 使用 `/model` 查看和切换当前模型与 reasoning 配置。
+- 当 Codex 发起 permission 请求时，在微信里通过 `/approve` 或 `/reject` 完成人工审批。
 
 ### 其它 ACP Agent
 
