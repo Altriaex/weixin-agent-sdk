@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "build:sdk": "corepack pnpm --dir packages/sdk build",
+    "build:sdk": "corepack pnpm -C packages/sdk run build",
     "postinstall": "corepack pnpm run build:sdk",
     "typecheck": "corepack pnpm run build:sdk && corepack pnpm -r run typecheck"
   }

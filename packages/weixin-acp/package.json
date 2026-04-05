@@ -34,13 +34,13 @@
   "scripts": {
     "build": "tsdown",
     "prepublishOnly": "pnpm run build",
-    "prelogin": "corepack pnpm --dir ../sdk build",
+    "prelogin": "corepack pnpm -C ../sdk run build",
     "login": "tsx main.ts login",
-    "prestart": "corepack pnpm --dir ../sdk build",
+    "prestart": "corepack pnpm -C ../sdk run build",
     "start": "tsx main.ts start",
-    "precodex": "corepack pnpm --dir ../sdk build",
+    "precodex": "corepack pnpm -C ../sdk run build",
     "codex": "tsx main.ts codex",
-    "preclaude-code": "corepack pnpm --dir ../sdk build",
+    "preclaude-code": "corepack pnpm -C ../sdk run build",
     "claude-code": "tsx main.ts claude-code",
     "typecheck": "tsc --noEmit"
   },

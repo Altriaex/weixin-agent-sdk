@@ -54,18 +54,19 @@ cd weixin-agent-sdk
 
 corepack prepare pnpm@latest --activate
 corepack pnpm install
+corepack pnpm -C packages/sdk run build
 ```
 
 先扫码登录微信：
 
 ```bash
-corepack pnpm --dir packages/weixin-acp login
+corepack pnpm -C packages/weixin-acp run login
 ```
 
 再启动 Codex 适配器：
 
 ```bash
-corepack pnpm --dir packages/weixin-acp codex
+corepack pnpm -C packages/weixin-acp run codex
 ```
 
 如果本机上的 Codex CLI 访问 MCP 或 OpenAI 相关服务需要代理，可以这样启动：
@@ -74,13 +75,19 @@ corepack pnpm --dir packages/weixin-acp codex
 https_proxy=http://127.0.0.1:7890 \
 http_proxy=http://127.0.0.1:7890 \
 all_proxy=socks5://127.0.0.1:7890 \
-corepack pnpm --dir packages/weixin-acp codex
+corepack pnpm -C packages/weixin-acp run codex
 ```
 
 说明：
 
-- 根目录 `postinstall` 会自动构建 `packages/sdk/dist`，因此正常执行一次 `corepack pnpm install` 即可。
+- `weixin-acp` 在源码运行时会直接导入 `weixin-agent-sdk` 的包导出入口，因此需要先确保 `packages/sdk/dist` 已经存在。
+- 为避免工作区安装方式或脚本执行差异导致 `packages/sdk/dist` 缺失，建议在 `install` 后显式执行一次 `corepack pnpm -C packages/sdk run build`。
 - 如果你想先确认环境是否正常，可以额外运行 `corepack pnpm typecheck`。
+- 如果 `login` 或 `codex` 启动时报错 `Cannot find module ... weixin-agent-sdk/dist/index.mjs`，通常就是 `packages/sdk/dist` 还没生成；先执行：
+
+```bash
+corepack pnpm -C packages/sdk run build
+```
 
 ### 其它 ACP Agent
 
