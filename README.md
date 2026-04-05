@@ -38,6 +38,50 @@ npx weixin-acp codex
 - 使用 `/model` 查看和切换当前模型与 reasoning 配置。
 - 当 Codex 发起 permission 请求时，在微信里通过 `/approve` 或 `/reject` 完成人工审批。
 
+### 在另一台机器上从源码运行
+
+如果你还没有把最新改动发布到 npm，可以直接克隆仓库后从源码运行，不依赖 `npx weixin-acp ...`。
+
+前提：
+
+- Node.js 22+
+- 已安装并登录 Codex CLI
+- 使用 Corepack 管理 `pnpm`
+
+```bash
+git clone <your-repo-url>
+cd weixin-agent-sdk
+
+corepack prepare pnpm@latest --activate
+corepack pnpm install
+```
+
+先扫码登录微信：
+
+```bash
+corepack pnpm --dir packages/weixin-acp login
+```
+
+再启动 Codex 适配器：
+
+```bash
+corepack pnpm --dir packages/weixin-acp codex
+```
+
+如果本机上的 Codex CLI 访问 MCP 或 OpenAI 相关服务需要代理，可以这样启动：
+
+```bash
+https_proxy=http://127.0.0.1:7890 \
+http_proxy=http://127.0.0.1:7890 \
+all_proxy=socks5://127.0.0.1:7890 \
+corepack pnpm --dir packages/weixin-acp codex
+```
+
+说明：
+
+- 根目录 `postinstall` 会自动构建 `packages/sdk/dist`，因此正常执行一次 `corepack pnpm install` 即可。
+- 如果你想先确认环境是否正常，可以额外运行 `corepack pnpm typecheck`。
+
 ### 其它 ACP Agent
 
 比如 kimi-cli：
